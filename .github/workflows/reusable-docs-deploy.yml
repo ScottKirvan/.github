@@ -1,0 +1,68 @@
+name: Reusable — VitePress Docs Deploy
+
+on:
+  workflow_call:
+    inputs:
+      node_version:
+        description: Node.js version to use
+        required: false
+        type: string
+        default: "20"
+      working_directory:
+        description: Directory containing the VitePress project
+        required: false
+        type: string
+        default: docs
+      build_command:
+        description: npm script to build the docs
+        required: false
+        type: string
+        default: npm run docs:build
+      artifact_path:
+        description: Path to the built site to upload
+        required: false
+        type: string
+        default: docs/.vitepress/dist
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working_directory }}/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ${{ inputs.working_directory }}
+
+      - name: Build docs
+        run: ${{ inputs.build_command }}
+        working-directory: ${{ inputs.working_directory }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ inputs.artifact_path }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

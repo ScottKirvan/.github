@@ -1,0 +1,64 @@
+name: Reusable — AI Release Notes
+
+on:
+  workflow_call:
+    inputs:
+      tag_name:
+        description: Release tag to rewrite notes for
+        required: true
+        type: string
+      project_context:
+        description: One or two sentences describing the project and its audience, injected into the AI prompt
+        required: true
+        type: string
+      model:
+        description: GitHub Models model identifier
+        required: false
+        type: string
+        default: openai/gpt-4o
+
+permissions:
+  contents: write
+  models: read
+
+jobs:
+  rewrite-notes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch current release notes and build prompt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag_name }}
+          REPO: ${{ github.repository }}
+          PROJECT_CONTEXT: ${{ inputs.project_context }}
+        run: |
+          gh release view "$TAG" --repo "$REPO" --json body -q '.body' > /tmp/raw_notes.md
+          printf 'Project context: %s\n\nRaw changelog:\n' "$PROJECT_CONTEXT" > /tmp/prompt.txt
+          cat /tmp/raw_notes.md >> /tmp/prompt.txt
+
+      - name: Rewrite notes with AI
+        id: ai
+        uses: actions/ai-inference@v2
+        with:
+          model: ${{ inputs.model }}
+          max-completion-tokens: 1200
+          temperature: 0.4
+          system-prompt: |
+            You are a technical writer helping communicate software releases to end users.
+            Rewrite the provided changelog in plain, friendly English.
+            Keep it concise — 3 to 8 bullet points max.
+            Group related changes where it makes sense.
+            Do not use marketing language. Do not invent features not in the input.
+            Output only the bullet list, no preamble, no heading.
+          prompt-file: /tmp/prompt.txt
+
+      - name: Update GitHub release with improved notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag_name }}
+          REPO: ${{ github.repository }}
+          IMPROVED_NOTES: ${{ steps.ai.outputs.response }}
+        run: |
+          printf '%s' "$IMPROVED_NOTES" > /tmp/improved_notes.md
+          gh release edit "$TAG" --repo "$REPO" --notes-file /tmp/improved_notes.md
+          echo "Release notes updated for $TAG"
