@@ -7,8 +7,12 @@ on:
         description: Release tag to rewrite notes for
         required: true
         type: string
+      project_name:
+        description: Human-readable display name (e.g. "QuKi Notes", not "QuKi-Notes")
+        required: true
+        type: string
       project_context:
-        description: One or two sentences describing the project and its audience, injected into the AI prompt
+        description: One or two sentences describing the project and its audience
         required: true
         type: string
       model:
@@ -30,10 +34,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag_name }}
           REPO: ${{ github.repository }}
+          PROJECT_NAME: ${{ inputs.project_name }}
           PROJECT_CONTEXT: ${{ inputs.project_context }}
         run: |
           gh release view "$TAG" --repo "$REPO" --json body -q '.body' > /tmp/raw_notes.md
-          printf 'Project context: %s\n\nRaw changelog:\n' "$PROJECT_CONTEXT" > /tmp/prompt.txt
+          printf 'Project name: %s\nProject context: %s\n\nRaw changelog:\n' "$PROJECT_NAME" "$PROJECT_CONTEXT" > /tmp/prompt.txt
           cat /tmp/raw_notes.md >> /tmp/prompt.txt
 
       - name: Rewrite notes with AI
@@ -49,6 +54,7 @@ jobs:
             Keep it concise — 3 to 8 bullet points max.
             Group related changes where it makes sense.
             Do not use marketing language. Do not invent features not in the input.
+            Always refer to the project by its exact name as given in "Project name:" — do not infer or substitute a different name.
             Output only the bullet list, no preamble, no heading.
           prompt-file: /tmp/prompt.txt
 
