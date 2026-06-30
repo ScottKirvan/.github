@@ -16,6 +16,11 @@ on:
         required: false
         type: number
         default: 5814783
+      emoji:
+        description: Emoji prefix for the announcement line
+        required: false
+        type: string
+        default: "🚀"
     secrets:
       DISCORD_WEBHOOK:
         required: true
@@ -34,6 +39,7 @@ jobs:
           TAG: ${{ inputs.tag_name }}
           PROJECT_NAME: ${{ inputs.project_name }}
           COLOR: ${{ inputs.color }}
+          EMOJI: ${{ inputs.emoji }}
           REPO: ${{ github.repository }}
         run: |
           RELEASE_URL="https://github.com/$REPO/releases/tag/$TAG"
@@ -47,7 +53,7 @@ jobs:
           [ -z "$CLEAN_NOTES" ] && CLEAN_NOTES="$NOTES"
 
           PAYLOAD=$(jq -n \
-            --arg content "🚀 **$PROJECT_NAME $TAG Published**" \
+            --arg content "$EMOJI **$PROJECT_NAME $TAG Published**" \
             --arg desc "$CLEAN_NOTES" \
             --arg url "$RELEASE_URL" \
             --argjson color "$COLOR" \
