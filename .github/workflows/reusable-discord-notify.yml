@@ -41,8 +41,9 @@ jobs:
           # Read the (already AI-improved) release notes from the GitHub API
           NOTES=$(gh release view "$TAG" --repo "$REPO" --json body -q '.body')
 
-          # Swap any comparison links for the release link
-          CLEAN_NOTES=$(echo "$NOTES" | sed -E "s|\[.*\]\(https://github.com/[^)]+/compare/[^)]+\)|[$TAG]($RELEASE_URL)|g")
+          # Strip header (before first ---) and footer (after last ---), keeping only the changelog bullets.
+          # Falls back to the full body if no --- separators are present.
+          CLEAN_NOTES=$(echo "$NOTES" | awk '/^---$/{count++; next} count==1')
           [ -z "$CLEAN_NOTES" ] && CLEAN_NOTES="$NOTES"
 
           PAYLOAD=$(jq -n \
