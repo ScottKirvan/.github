@@ -7,10 +7,24 @@ on:
         description: Release tag to rewrite notes for
         required: true
         type: string
-      project_context:
-        description: One or two sentences describing the project and its audience, injected into the AI prompt
+      project_name:
+        description: Human-readable display name (e.g. "QuKi Notes", not "QuKi-Notes")
         required: true
         type: string
+      project_context:
+        description: One or two sentences describing the project and its audience
+        required: true
+        type: string
+      header:
+        description: Optional markdown block prepended before the AI-generated notes
+        required: false
+        type: string
+        default: ""
+      footer:
+        description: Optional markdown block appended after the AI-generated notes
+        required: false
+        type: string
+        default: ""
       model:
         description: GitHub Models model identifier
         required: false
@@ -30,35 +44,48 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag_name }}
           REPO: ${{ github.repository }}
+          PROJECT_NAME: ${{ inputs.project_name }}
           PROJECT_CONTEXT: ${{ inputs.project_context }}
         run: |
           gh release view "$TAG" --repo "$REPO" --json body -q '.body' > /tmp/raw_notes.md
-          printf 'Project context: %s\n\nRaw changelog:\n' "$PROJECT_CONTEXT" > /tmp/prompt.txt
+          printf 'Project name: %s\nProject context: %s\n\nRaw changelog:\n' \
+            "$PROJECT_NAME" "$PROJECT_CONTEXT" > /tmp/prompt.txt
           cat /tmp/raw_notes.md >> /tmp/prompt.txt
 
-      - name: Rewrite notes with AI
+      - name: Rewrite and categorize notes with AI
         id: ai
         uses: actions/ai-inference@v2
         with:
           model: ${{ inputs.model }}
-          max-completion-tokens: 1200
+          max-completion-tokens: 1500
           temperature: 0.4
           system-prompt: |
             You are a technical writer helping communicate software releases to end users.
-            Rewrite the provided changelog in plain, friendly English.
-            Keep it concise — 3 to 8 bullet points max.
-            Group related changes where it makes sense.
-            Do not use marketing language. Do not invent features not in the input.
-            Output only the bullet list, no preamble, no heading.
+            Rewrite the provided changelog into plain, friendly English.
+            Always refer to the project by its exact name as given in "Project name:" — do not infer or substitute a different name.
+            Organize the output into two sections using these exact headings (omit a section if there is nothing to put in it):
+
+            ### What's New
+            ### Bug Fixes
+
+            Under each heading, write concise bullet points a non-technical user can understand.
+            Keep each bullet to one sentence. No marketing language. Do not invent anything not in the input.
+            Output only the section headings and bullets — no preamble, no summary, no extra text.
           prompt-file: /tmp/prompt.txt
 
-      - name: Update GitHub release with improved notes
+      - name: Assemble and publish release notes
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag_name }}
           REPO: ${{ github.repository }}
-          IMPROVED_NOTES: ${{ steps.ai.outputs.response }}
+          HEADER: ${{ inputs.header }}
+          AI_NOTES: ${{ steps.ai.outputs.response }}
+          FOOTER: ${{ inputs.footer }}
         run: |
-          printf '%s' "$IMPROVED_NOTES" > /tmp/improved_notes.md
-          gh release edit "$TAG" --repo "$REPO" --notes-file /tmp/improved_notes.md
+          {
+            if [ -n "$HEADER" ]; then printf '%s\n\n' "$HEADER"; fi
+            printf '%s\n' "$AI_NOTES"
+            if [ -n "$FOOTER" ]; then printf '\n%s\n' "$FOOTER"; fi
+          } > /tmp/release_notes.md
+          gh release edit "$TAG" --repo "$REPO" --notes-file /tmp/release_notes.md
           echo "Release notes updated for $TAG"
