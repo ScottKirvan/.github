@@ -71,43 +71,39 @@ jobs:
           echo "PRs to add:"
           cat /tmp/prs.txt
 
-          # Write the changelog patcher
-          cat > /tmp/patch_changelog.py << 'PYEOF'
-import sys, re
+          # Patch changelog: find version heading and insert PR section using awk
+          VERSION="${TAG#v}"
+          HEADING_LINE=$(grep -n "^## \[$VERSION\]" "$CHANGELOG_PATH" | head -1 | cut -d: -f1)
 
-changelog_path = sys.argv[1]
-tag = sys.argv[2].lstrip('v')
-prs_file = sys.argv[3]
+          if [ -z "$HEADING_LINE" ]; then
+            echo "Version heading for $VERSION not found in changelog — skipping"
+            exit 0
+          fi
 
-with open(prs_file) as f:
-    pr_text = f.read().strip()
+          # Skip if PR section already exists within 20 lines of the heading
+          if awk -v start="$HEADING_LINE" \
+            'NR>start && NR<=(start+20) && /^### Pull Requests/{found=1} END{exit !found}' \
+            "$CHANGELOG_PATH"; then
+            echo "PR section already exists — skipping"
+            exit 0
+          fi
 
-if not pr_text:
-    print("No PR text — skipping")
-    sys.exit(0)
+          # Insert ### Pull Requests section immediately after the version heading line
+          awk -v ins="$HEADING_LINE" -v prs="/tmp/prs.txt" '
+            FNR == ins {
+              print
+              print ""
+              print "### Pull Requests"
+              print ""
+              while ((getline line < prs) > 0) { print line }
+              print ""
+              next
+            }
+            { print }
+          ' "$CHANGELOG_PATH" > /tmp/changelog_patched.tmp
 
-with open(changelog_path) as f:
-    content = f.read()
-
-match = re.search(rf'^## \[{re.escape(tag)}\]', content, re.MULTILINE)
-if not match:
-    print(f"Version heading for {tag} not found in changelog — skipping")
-    sys.exit(0)
-
-line_end = content.index('\n', match.end()) + 1
-
-if '\n### Pull Requests\n' in content[line_end:line_end + 400]:
-    print("PR section already exists — skipping")
-    sys.exit(0)
-
-section = f'\n### Pull Requests\n\n{pr_text}\n'
-with open(changelog_path, 'w') as f:
-    f.write(content[:line_end] + section + content[line_end:])
-
-print("Changelog updated with PR links")
-PYEOF
-
-          python3 /tmp/patch_changelog.py "$CHANGELOG_PATH" "$TAG" /tmp/prs.txt
+          mv /tmp/changelog_patched.tmp "$CHANGELOG_PATH"
+          echo "Changelog updated with PR links"
 
           # Commit if the file changed
           git config user.name "github-actions[bot]"
