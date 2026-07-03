@@ -60,7 +60,7 @@ jobs:
             '{
               content: $content,
               embeds: [{
-                title: "Changelog",
+                title: "Downloads",
                 description: ($desc | .[0:4000]),
                 url: $url,
                 color: $color

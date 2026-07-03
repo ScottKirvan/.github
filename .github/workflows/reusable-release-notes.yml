@@ -25,6 +25,11 @@ on:
         required: false
         type: string
         default: ""
+      changelog_path:
+        description: Repo-relative path to the changelog file (appended as a link in the release notes footer)
+        required: false
+        type: string
+        default: notes/CHANGELOG.md
       model:
         description: GitHub Models model identifier
         required: false
@@ -81,11 +86,25 @@ jobs:
           HEADER: ${{ inputs.header }}
           AI_NOTES: ${{ steps.ai.outputs.response }}
           FOOTER: ${{ inputs.footer }}
+          CHANGELOG_PATH: ${{ inputs.changelog_path }}
         run: |
+          # Append changelog link to footer (strip trailing whitespace first so the link lands inline)
+          TRIMMED_FOOTER=$(printf '%s' "$FOOTER" | sed 's/[[:space:]]*$//')
+          if [ -n "$CHANGELOG_PATH" ]; then
+            CHANGELOG_URL="https://github.com/$REPO/blob/main/$CHANGELOG_PATH"
+            if [ -n "$TRIMMED_FOOTER" ]; then
+              FULL_FOOTER="${TRIMMED_FOOTER} · 📋 [Changelog](${CHANGELOG_URL})"
+            else
+              FULL_FOOTER="📋 [Changelog](${CHANGELOG_URL})"
+            fi
+          else
+            FULL_FOOTER="$FOOTER"
+          fi
+
           {
             if [ -n "$HEADER" ]; then printf '%s\n\n' "$HEADER"; fi
             printf '%s\n' "$AI_NOTES"
-            if [ -n "$FOOTER" ]; then printf '\n%s\n' "$FOOTER"; fi
+            if [ -n "$FULL_FOOTER" ]; then printf '\n%s\n' "$FULL_FOOTER"; fi
           } > /tmp/release_notes.md
           gh release edit "$TAG" --repo "$REPO" --notes-file /tmp/release_notes.md
           echo "Release notes updated for $TAG"
