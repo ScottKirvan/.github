@@ -1,0 +1,121 @@
+name: Reusable — Update Changelog with PR Links
+
+on:
+  workflow_call:
+    inputs:
+      tag_name:
+        description: Release tag to add PR links for
+        required: true
+        type: string
+      changelog_path:
+        description: Path to changelog file relative to repo root
+        required: false
+        type: string
+        default: notes/CHANGELOG.md
+
+permissions:
+  contents: write
+
+jobs:
+  update-prs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - name: Add PR links to changelog
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag_name }}
+          CHANGELOG_PATH: ${{ inputs.changelog_path }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Find the previous release tag (the entry immediately after TAG in the list)
+          PREV_TAG=$(gh release list --repo "$REPO" --limit 50 --json tagName \
+            --jq --arg tag "$TAG" \
+            '[.[].tagName] | index($tag) as $i | if $i != null and $i < (length - 1) then .[$i + 1] else null end')
+
+          if [ -z "$PREV_TAG" ] || [ "$PREV_TAG" = "null" ]; then
+            echo "No previous release found — skipping PR link update"
+            exit 0
+          fi
+
+          echo "Comparing $PREV_TAG → $TAG"
+
+          # Get commit SHAs between the two tags
+          SHAS=$(gh api "repos/$REPO/compare/${PREV_TAG}...${TAG}" \
+            --jq '[.commits[].sha] | .[]' 2>/dev/null || true)
+
+          if [ -z "$SHAS" ]; then
+            echo "No commits found between tags — skipping"
+            exit 0
+          fi
+
+          # Collect PRs associated with each commit, then deduplicate
+          > /tmp/prs_raw.txt
+          while IFS= read -r SHA; do
+            gh api "repos/$REPO/commits/$SHA/pulls" \
+              --jq '.[] | "* [#\(.number)](\(.html_url)) \(.title)"' \
+              2>/dev/null >> /tmp/prs_raw.txt || true
+          done <<< "$SHAS"
+
+          sort -u /tmp/prs_raw.txt > /tmp/prs.txt
+
+          if [ ! -s /tmp/prs.txt ]; then
+            echo "No PRs found for this release — skipping"
+            exit 0
+          fi
+
+          echo "PRs to add:"
+          cat /tmp/prs.txt
+
+          # Write the changelog patcher
+          cat > /tmp/patch_changelog.py << 'PYEOF'
+import sys, re
+
+changelog_path = sys.argv[1]
+tag = sys.argv[2].lstrip('v')
+prs_file = sys.argv[3]
+
+with open(prs_file) as f:
+    pr_text = f.read().strip()
+
+if not pr_text:
+    print("No PR text — skipping")
+    sys.exit(0)
+
+with open(changelog_path) as f:
+    content = f.read()
+
+match = re.search(rf'^## \[{re.escape(tag)}\]', content, re.MULTILINE)
+if not match:
+    print(f"Version heading for {tag} not found in changelog — skipping")
+    sys.exit(0)
+
+line_end = content.index('\n', match.end()) + 1
+
+if '\n### Pull Requests\n' in content[line_end:line_end + 400]:
+    print("PR section already exists — skipping")
+    sys.exit(0)
+
+section = f'\n### Pull Requests\n\n{pr_text}\n'
+with open(changelog_path, 'w') as f:
+    f.write(content[:line_end] + section + content[line_end:])
+
+print("Changelog updated with PR links")
+PYEOF
+
+          python3 /tmp/patch_changelog.py "$CHANGELOG_PATH" "$TAG" /tmp/prs.txt
+
+          # Commit if the file changed
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$CHANGELOG_PATH"
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "Update changelog: add PR references for $TAG"
+          git push
