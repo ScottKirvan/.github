@@ -53,11 +53,11 @@ jobs:
             exit 0
           fi
 
-          # Collect PRs associated with each commit, then deduplicate
+          # Collect PR numbers (hyperlinked) for each commit, then deduplicate
           > /tmp/prs_raw.txt
           while IFS= read -r SHA; do
             gh api "repos/$REPO/commits/$SHA/pulls" \
-              --jq '.[] | "* [#\(.number)](\(.html_url)) \(.title)"' \
+              --jq '.[] | "[#\(.number)](\(.html_url))"' \
               2>/dev/null >> /tmp/prs_raw.txt || true
           done <<< "$SHAS"
 
@@ -68,10 +68,12 @@ jobs:
             exit 0
           fi
 
-          echo "PRs to add:"
-          cat /tmp/prs.txt
+          # Build "Includes PRs: [#1](url), [#2](url)" line
+          PR_LIST=$(awk '{if(NR>1)printf ", "; printf "%s", $0}' /tmp/prs.txt)
+          printf 'Includes PRs: %s\n' "$PR_LIST" > /tmp/includes_line.txt
+          echo "Adding: $(cat /tmp/includes_line.txt)"
 
-          # Patch changelog: find version heading and insert PR section using awk
+          # Find version heading line number
           VERSION="${TAG#v}"
           HEADING_LINE=$(grep -n "^## \[$VERSION\]" "$CHANGELOG_PATH" | head -1 | cut -d: -f1)
 
@@ -80,26 +82,31 @@ jobs:
             exit 0
           fi
 
-          # Skip if PR section already exists within 20 lines of the heading
-          if awk -v start="$HEADING_LINE" \
-            'NR>start && NR<=(start+20) && /^### Pull Requests/{found=1} END{exit !found}' \
-            "$CHANGELOG_PATH"; then
-            echo "PR section already exists — skipping"
+          # Skip if already added
+          if awk -v start="$HEADING_LINE" '
+            FNR == start { in_section = 1; next }
+            in_section && /^## / { exit }
+            in_section && /^Includes PRs:/ { found = 1; exit }
+            END { exit !found }
+          ' "$CHANGELOG_PATH"; then
+            echo "PR line already exists — skipping"
             exit 0
           fi
 
-          # Insert ### Pull Requests section immediately after the version heading line
-          awk -v ins="$HEADING_LINE" -v prs="/tmp/prs.txt" '
-            FNR == ins {
-              print
-              print ""
-              print "### Pull Requests"
-              print ""
-              while ((getline line < prs) > 0) { print line }
-              print ""
-              next
-            }
+          # Find the last non-blank line of the version section
+          SECTION_END=$(awk -v start="$HEADING_LINE" '
+            FNR >= start && /^## / && FNR > start { exit }
+            FNR >= start && NF > 0 { last = FNR }
+            END { print last }
+          ' "$CHANGELOG_PATH")
+
+          # Append "Includes PRs:" after the last non-blank line of the section
+          awk -v ins="$SECTION_END" '
             { print }
+            FNR == ins {
+              print ""
+              while ((getline line < "/tmp/includes_line.txt") > 0) { print line }
+            }
           ' "$CHANGELOG_PATH" > /tmp/changelog_patched.tmp
 
           mv /tmp/changelog_patched.tmp "$CHANGELOG_PATH"
