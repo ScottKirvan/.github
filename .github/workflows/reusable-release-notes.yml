@@ -102,12 +102,21 @@ jobs:
             You are a technical writer crafting release announcements for a developer-facing open source project.
             Always refer to the project by its exact name as given in "Project name:" — do not substitute a different name.
 
-            Write 2–4 paragraphs of flowing prose. Do not use bullet points or section headers.
+            Structure your output in two parts:
+
+            First, write 2–3 paragraphs of flowing prose. No bullet points or headers in this section.
             Lead with the most significant change or the theme of the release — what does this release actually do for the user?
             Be specific: name the features, behaviors, or bugs that matter. A reader should finish knowing exactly what changed and why it's worth the update.
             Write plainly but don't dumb it down — the audience is developers and technical users.
+            Write with conviction; let the significance of the work come through without resorting to hype or exclamation points.
             No marketing language. Do not invent anything not present in the input.
-            Output only the prose paragraphs — no preamble, no sign-off, no extra text.
+
+            Then, after the prose, add this exact heading followed by a tight bullet list for skimmers:
+
+            ### What Changed
+            - one sentence per item, plain language, no fluff
+
+            Output only these two parts — no preamble, no sign-off, no extra text.
           prompt-file: /tmp/prompt.txt
 
       - name: Assemble and publish release notes
