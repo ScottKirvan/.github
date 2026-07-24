@@ -44,7 +44,7 @@ jobs:
   rewrite-notes:
     runs-on: ubuntu-latest
     steps:
-      - name: Fetch current release notes and build prompt
+      - name: Fetch release notes, commit history, and PR descriptions
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag_name }}
@@ -52,30 +52,62 @@ jobs:
           PROJECT_NAME: ${{ inputs.project_name }}
           PROJECT_CONTEXT: ${{ inputs.project_context }}
         run: |
+          # Current release body from release-please
           gh release view "$TAG" --repo "$REPO" --json body -q '.body' > /tmp/raw_notes.md
-          printf 'Project name: %s\nProject context: %s\n\nRaw changelog:\n' \
-            "$PROJECT_NAME" "$PROJECT_CONTEXT" > /tmp/prompt.txt
-          cat /tmp/raw_notes.md >> /tmp/prompt.txt
 
-      - name: Rewrite and categorize notes with AI
+          # Find the previous release tag (sorted by publish date, skip current)
+          PREV_TAG=$(gh release list --repo "$REPO" --limit 20 --json tagName,publishedAt \
+            --jq --arg tag "$TAG" \
+            '[.[] | select(.tagName != $tag)] | sort_by(.publishedAt) | reverse | .[0].tagName // ""')
+
+          # Fetch commit messages between tags (or from repo root if no previous release)
+          if [ -n "$PREV_TAG" ]; then
+            gh api "repos/$REPO/compare/$PREV_TAG...$TAG" \
+              --jq '.commits[] | "- " + (.commit.message | split("\n") | .[0])' \
+              > /tmp/commits.txt 2>/dev/null || true
+          fi
+
+          # Extract PR numbers from commit messages and fetch PR title + body
+          if [ -f /tmp/commits.txt ]; then
+            grep -oE '#[0-9]+' /tmp/commits.txt | tr -d '#' | sort -u | while read PR_NUM; do
+              gh pr view "$PR_NUM" --repo "$REPO" --json title,body \
+                --jq '"### PR #\(env.PR_NUM): \(.title)\n\(.body)"' 2>/dev/null || true
+            done > /tmp/pr_bodies.txt
+          fi
+
+          # Assemble full prompt
+          {
+            printf 'Project name: %s\n' "$PROJECT_NAME"
+            printf 'Project context: %s\n\n' "$PROJECT_CONTEXT"
+            printf '## Release summary (generated changelog)\n'
+            cat /tmp/raw_notes.md
+            if [ -f /tmp/commits.txt ] && [ -s /tmp/commits.txt ]; then
+              printf '\n## Commits in this release\n'
+              cat /tmp/commits.txt
+            fi
+            if [ -f /tmp/pr_bodies.txt ] && [ -s /tmp/pr_bodies.txt ]; then
+              printf '\n## Merged pull request details\n'
+              cat /tmp/pr_bodies.txt
+            fi
+          } > /tmp/prompt.txt
+
+      - name: Rewrite notes as narrative with AI
         id: ai
         uses: actions/ai-inference@v2
         with:
           model: ${{ inputs.model }}
-          max-completion-tokens: 1500
-          temperature: 0.4
+          max-completion-tokens: 2000
+          temperature: 0.5
           system-prompt: |
-            You are a technical writer helping communicate software releases to end users.
-            Rewrite the provided changelog into plain, friendly English.
-            Always refer to the project by its exact name as given in "Project name:" — do not infer or substitute a different name.
-            Organize the output into two sections using these exact headings (omit a section if there is nothing to put in it):
+            You are a technical writer crafting release announcements for a developer-facing open source project.
+            Always refer to the project by its exact name as given in "Project name:" — do not substitute a different name.
 
-            ### What's New
-            ### Bug Fixes
-
-            Under each heading, write concise bullet points a non-technical user can understand.
-            Keep each bullet to one sentence. No marketing language. Do not invent anything not in the input.
-            Output only the section headings and bullets — no preamble, no summary, no extra text.
+            Write 2–4 paragraphs of flowing prose. Do not use bullet points or section headers.
+            Lead with the most significant change or the theme of the release — what does this release actually do for the user?
+            Be specific: name the features, behaviors, or bugs that matter. A reader should finish knowing exactly what changed and why it's worth the update.
+            Write plainly but don't dumb it down — the audience is developers and technical users.
+            No marketing language. Do not invent anything not present in the input.
+            Output only the prose paragraphs — no preamble, no sign-off, no extra text.
           prompt-file: /tmp/prompt.txt
 
       - name: Assemble and publish release notes
@@ -88,7 +120,6 @@ jobs:
           FOOTER: ${{ inputs.footer }}
           CHANGELOG_PATH: ${{ inputs.changelog_path }}
         run: |
-          # Append changelog link to footer (strip trailing whitespace first so the link lands inline)
           TRIMMED_FOOTER=$(printf '%s' "$FOOTER" | sed 's/[[:space:]]*$//')
           if [ -n "$CHANGELOG_PATH" ]; then
             CHANGELOG_URL="https://github.com/$REPO/blob/main/$CHANGELOG_PATH"
