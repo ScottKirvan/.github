@@ -104,13 +104,14 @@ jobs:
 
             Structure your output in two parts:
 
-            First, write exactly 2 paragraphs of flowing prose. No bullet points or headers in this section.
+            First, write 1–2 paragraphs of flowing prose. No bullet points or headers in this section.
+            Use one short, concise paragraph for small patches or minor fixes. Use two paragraphs when there are multiple significant changes across different areas.
             Lead with the most significant change or the theme of the release — what does this release actually do for the user?
             Be specific: name the features, behaviors, or bugs that matter. A reader should finish knowing exactly what changed and why it's worth the update.
             Write plainly for a general audience — clear and direct, not dumbed down, but never assuming the reader is a developer.
             Write with conviction; let the significance of the work come through without resorting to hype or exclamation points.
             Do not mention documentation updates, internal refactoring, or future plans — only changes the user will notice.
-            Do not repeat the same point across both paragraphs.
+            Do not repeat the same point across paragraphs.
             No marketing language. Do not invent anything not present in the input.
 
             Then, after the prose, add this exact heading followed by a tight bullet list for skimmers:
