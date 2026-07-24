@@ -57,7 +57,8 @@ jobs:
 
           # Find the previous release tag (sorted by publish date, skip current)
           PREV_TAG=$(gh release list --repo "$REPO" --limit 20 --json tagName,publishedAt \
-            --jq "[.[] | select(.tagName != \"$TAG\")] | sort_by(.publishedAt) | reverse | .[0].tagName // \"\"")
+            | jq -r --arg tag "$TAG" \
+            '[.[] | select(.tagName != $tag)] | sort_by(.publishedAt) | reverse | .[0].tagName // ""')
 
           # Fetch commit messages between tags (or from repo root if no previous release)
           if [ -n "$PREV_TAG" ]; then
