@@ -36,6 +36,41 @@ on:
         type: string
         default: openai/gpt-4o
 
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: Release tag to rewrite notes for (e.g. v1.2.3)
+        required: true
+        type: string
+      project_name:
+        description: Human-readable display name (e.g. "QuKi Notes")
+        required: true
+        type: string
+      project_context:
+        description: One or two sentences describing the project and its audience
+        required: true
+        type: string
+      header:
+        description: Optional markdown block prepended before the AI-generated notes
+        required: false
+        type: string
+        default: ""
+      footer:
+        description: Optional markdown block appended after the AI-generated notes
+        required: false
+        type: string
+        default: ""
+      changelog_path:
+        description: Repo-relative path to the changelog file
+        required: false
+        type: string
+        default: notes/CHANGELOG.md
+      model:
+        description: GitHub Models model identifier
+        required: false
+        type: string
+        default: openai/gpt-4o
+
 permissions:
   contents: write
   models: read
