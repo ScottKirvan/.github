@@ -1,0 +1,279 @@
+name: Reusable — Pre-Release Staging
+
+on:
+  workflow_call:
+    inputs:
+      tag_name:
+        description: Version tag override — leave blank to infer from open release-please PR
+        required: false
+        type: string
+        default: ""
+      project_name:
+        description: Human-readable display name
+        required: true
+        type: string
+      project_context:
+        description: One or two sentences describing the project and its audience
+        required: true
+        type: string
+      header:
+        description: Markdown block prepended before the AI-generated notes
+        required: false
+        type: string
+        default: ""
+      footer:
+        description: Markdown block appended after the AI-generated notes
+        required: false
+        type: string
+        default: ""
+      changelog_path:
+        description: Repo-relative path to changelog file (appended as link in footer)
+        required: false
+        type: string
+        default: ""
+      model:
+        description: GitHub Models model identifier
+        required: false
+        type: string
+        default: openai/gpt-4o
+      base_branch:
+        description: Branch to compare against previous release tag
+        required: false
+        type: string
+        default: main
+    outputs:
+      tag_name:
+        description: The version tag staged (useful when inferred)
+        value: ${{ jobs.stage.outputs.tag_name }}
+      staging_branch:
+        description: The staging branch name
+        value: ${{ jobs.stage.outputs.staging_branch }}
+
+permissions:
+  contents: write
+  models: read
+  pull-requests: read
+
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ steps.version.outputs.tag_name }}
+      staging_branch: ${{ steps.version.outputs.staging_branch }}
+    steps:
+      - name: Resolve version and staging branch
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG_INPUT: ${{ inputs.tag_name }}
+        run: |
+          if [ -n "$TAG_INPUT" ]; then
+            TAG="$TAG_INPUT"
+          else
+            # Find open release-please PR (most recent)
+            RP_BRANCH=$(gh pr list --repo "$REPO" --state open --json headRefName,createdAt \
+              --jq '[.[] | select(.headRefName | startswith("release-please--"))] | sort_by(.createdAt) | reverse | .[0].headRefName // ""')
+
+            if [ -z "$RP_BRANCH" ]; then
+              echo "::error::No open release-please PR found and no tag_name provided. Either provide tag_name or ensure a release-please PR is open."
+              exit 1
+            fi
+
+            echo "Using release-please branch: $RP_BRANCH"
+
+            # Read version from manifest on the release-please branch
+            VERSION=$(gh api "repos/$REPO/contents/.github/release-please/.release-please-manifest.json?ref=$RP_BRANCH" \
+              --jq '.content' | base64 -d | jq -r '.["."]')
+
+            if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+              echo "::error::Could not read version from release-please manifest on $RP_BRANCH"
+              exit 1
+            fi
+
+            # Match v-prefix convention of existing tags
+            LATEST_TAG=$(gh release list --repo "$REPO" --limit 1 --json tagName --jq '.[0].tagName // ""')
+            if [[ "$LATEST_TAG" == v* ]]; then
+              TAG="v$VERSION"
+            else
+              TAG="$VERSION"
+            fi
+          fi
+
+          STAGING_BRANCH="pre-release-staging/$TAG"
+          echo "tag_name=$TAG" >> "$GITHUB_OUTPUT"
+          echo "staging_branch=$STAGING_BRANCH" >> "$GITHUB_OUTPUT"
+          echo "Resolved: tag=$TAG  branch=$STAGING_BRANCH"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.base_branch }}
+          token: ${{ github.token }}
+
+      - name: Set up staging branch
+        env:
+          STAGING_BRANCH: ${{ steps.version.outputs.staging_branch }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$STAGING_BRANCH"
+          mkdir -p .github/tmp/pre-release-staging/
+
+      - name: Fetch commit history and PR descriptions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag_name }}
+          REPO: ${{ github.repository }}
+          PROJECT_NAME: ${{ inputs.project_name }}
+          PROJECT_CONTEXT: ${{ inputs.project_context }}
+          BASE_BRANCH: ${{ inputs.base_branch }}
+        run: |
+          # Find the latest published (non-draft) release tag
+          PREV_TAG=$(gh release list --repo "$REPO" --limit 20 --json tagName,publishedAt,isDraft \
+            | jq -r '[.[] | select(.isDraft == false)] | sort_by(.publishedAt) | reverse | .[0].tagName // ""')
+
+          if [ -n "$PREV_TAG" ]; then
+            gh api "repos/$REPO/compare/$PREV_TAG...$BASE_BRANCH" \
+              --jq '.commits[] | "- " + (.commit.message | split("\n") | .[0])' \
+              > /tmp/commits.txt 2>/dev/null || true
+          else
+            gh api "repos/$REPO/commits?sha=$BASE_BRANCH&per_page=20" \
+              --jq '.[] | "- " + (.commit.message | split("\n") | .[0])' \
+              > /tmp/commits.txt 2>/dev/null || true
+          fi
+
+          # Fetch PR bodies for referenced PRs
+          if [ -f /tmp/commits.txt ]; then
+            grep -oE '#[0-9]+' /tmp/commits.txt | tr -d '#' | sort -u | while read PR_NUM; do
+              gh pr view "$PR_NUM" --repo "$REPO" --json title,body \
+                --jq '"### PR #\(env.PR_NUM): \(.title)\n\(.body)"' 2>/dev/null || true
+            done > /tmp/pr_bodies.txt
+          fi
+
+          {
+            printf 'Project name: %s\n' "$PROJECT_NAME"
+            printf 'Project context: %s\n\n' "$PROJECT_CONTEXT"
+            printf '## Unreleased changes heading toward %s\n' "$TAG"
+            if [ -f /tmp/commits.txt ] && [ -s /tmp/commits.txt ]; then
+              printf '\n## Commits since last release\n'
+              cat /tmp/commits.txt
+            fi
+            if [ -f /tmp/pr_bodies.txt ] && [ -s /tmp/pr_bodies.txt ]; then
+              printf '\n## Merged pull request details\n'
+              cat /tmp/pr_bodies.txt
+            fi
+          } > /tmp/prompt.txt
+
+      - name: Generate AI content
+        id: ai
+        uses: actions/ai-inference@v2
+        with:
+          model: ${{ inputs.model }}
+          max-completion-tokens: 2000
+          temperature: 0.5
+          system-prompt: |
+            You are a technical writer crafting release notes for an open source project used by everyday people, not just developers.
+            Always refer to the project by its exact name as given in "Project name:" — do not substitute a different name.
+
+            Your response must contain exactly two sections of content, separated by the line "===DISCORD===". Do not output that line as content — it is a delimiter only. Do not output any section labels, part numbers, or preamble. Start directly with the release notes content.
+
+            The release notes section comes first. Organize all user-facing changes using these exact headings (omit a heading if it has no items):
+
+            ### ✨ What's New
+            ### 🛠 Fixes & Improvements
+
+            Under each heading, write one bullet per change:
+            - **Label** — Explanation.
+
+            Release notes rules:
+            - Be comprehensive — every user-facing change must appear, no matter how small.
+            - Skip only changes with zero user impact: CI/CD updates, internal refactoring, dependency bumps with no behavioral change, documentation-only edits.
+            - Order by impact within each section — most significant first.
+            - Label: 2–4 words, title case, names the change clearly.
+            - Explanation: one sentence in plain language. The label names what changed — the explanation must say what the user can now do, or what problem is now gone, in concrete terms. Never rephrase the label. Never use vague filler like "making it easier", "reducing confusion", or "more effectively" without saying specifically easier for what, what confusion, more effective at what.
+            - If the input does not explain why a change matters to the user, state what changed without inventing a reason. Do not add a benefit clause that is not directly supported by the commit message or PR description.
+            - No marketing language. Do not invent anything not present in the input.
+
+            ===DISCORD===
+
+            After the delimiter, write a short Discord announcement. 4–6 lines total:
+            - Line 1: one energetic sentence naming the project, version, and the headline change. No exclamation points — conviction, not hype.
+            - Lines 2–4: 2–3 tight bullet highlights (the biggest changes only). One short phrase each, starting with a dash.
+            - Final line: "Full notes + downloads →" (leave the URL as-is; it will be filled in automatically).
+
+            Tone for Discord: conversational, direct, punchy. This is a chat message, not documentation.
+            No sign-off. No extra text after the Discord section.
+          prompt-file: /tmp/prompt.txt
+
+      - name: Assemble and save staged files
+        env:
+          AI_NOTES: ${{ steps.ai.outputs.response }}
+          HEADER: ${{ inputs.header }}
+          FOOTER: ${{ inputs.footer }}
+          CHANGELOG_PATH: ${{ inputs.changelog_path }}
+          REPO: ${{ github.repository }}
+        run: |
+          RELEASE_NOTES=$(printf '%s' "$AI_NOTES" | awk '/^===DISCORD===$/{exit} {print}')
+          DISCORD_BLURB=$(printf '%s' "$AI_NOTES" | awk '/^===DISCORD===/{found=1; next} found{print}')
+
+          TRIMMED_FOOTER=$(printf '%s' "$FOOTER" | sed 's/[[:space:]]*$//')
+          if [ -n "$CHANGELOG_PATH" ]; then
+            CHANGELOG_URL="https://github.com/$REPO/blob/main/$CHANGELOG_PATH"
+            if [ -n "$TRIMMED_FOOTER" ]; then
+              FULL_FOOTER="${TRIMMED_FOOTER} · 📋 [Changelog](${CHANGELOG_URL})"
+            else
+              FULL_FOOTER="📋 [Changelog](${CHANGELOG_URL})"
+            fi
+          else
+            FULL_FOOTER="$TRIMMED_FOOTER"
+          fi
+
+          {
+            if [ -n "$HEADER" ]; then printf '%s\n\n' "$HEADER"; fi
+            printf '%s\n' "$RELEASE_NOTES"
+            if [ -n "$FULL_FOOTER" ]; then printf '\n%s\n' "$FULL_FOOTER"; fi
+          } > .github/tmp/pre-release-staging/release-notes.md
+
+          printf '%s\n' "$DISCORD_BLURB" > .github/tmp/pre-release-staging/discord-blurb.txt
+
+          echo "--- release-notes.md ---"
+          cat .github/tmp/pre-release-staging/release-notes.md
+          echo "--- discord-blurb.txt ---"
+          cat .github/tmp/pre-release-staging/discord-blurb.txt
+
+      - name: Commit and push staging branch
+        env:
+          STAGING_BRANCH: ${{ steps.version.outputs.staging_branch }}
+          TAG: ${{ steps.version.outputs.tag_name }}
+        run: |
+          git add .github/tmp/pre-release-staging/
+          git commit -m "chore: pre-release staging for $TAG"
+          git push origin "$STAGING_BRANCH" --force
+          echo "Staging branch pushed: $STAGING_BRANCH"
+
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          EXISTING_ID=$(gh api "repos/$REPO/releases" \
+            | jq -r --arg tag "$TAG" \
+            '[.[] | select(.tag_name == $tag and .draft == true)] | .[0].id // ""')
+
+          jq -n \
+            --arg tag "$TAG" \
+            --arg name "$TAG (preview)" \
+            --rawfile body .github/tmp/pre-release-staging/release-notes.md \
+            '{tag_name: $tag, name: $name, draft: true, prerelease: true, body: $body}' \
+            > /tmp/payload.json
+
+          if [ -n "$EXISTING_ID" ]; then
+            RELEASE_URL=$(gh api "repos/$REPO/releases/$EXISTING_ID" \
+              --method PATCH --input /tmp/payload.json --jq '.html_url')
+            echo "Draft pre-release updated: $RELEASE_URL"
+          else
+            RELEASE_URL=$(gh api "repos/$REPO/releases" \
+              --method POST --input /tmp/payload.json --jq '.html_url')
+            echo "Draft pre-release created: $RELEASE_URL"
+          fi
