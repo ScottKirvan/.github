@@ -166,6 +166,11 @@ jobs:
       - name: Install Copilot CLI
         run: npm install -g @github/copilot
 
+      - name: List available Copilot models
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_PAT }}
+        run: copilot --list-models 2>&1 || copilot --help 2>&1 || true
+
       - name: Generate AI content
         id: ai
         uses: actions/ai-inference@v3
