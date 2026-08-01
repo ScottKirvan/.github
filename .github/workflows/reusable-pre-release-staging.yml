@@ -32,10 +32,10 @@ on:
         type: string
         default: ""
       model:
-        description: GitHub Models model identifier
+        description: Copilot model identifier (e.g. gpt-4.1, claude-sonnet-4.5)
         required: false
         type: string
-        default: openai/gpt-4o
+        default: gpt-4.1
       base_branch:
         description: Branch to compare against previous release tag
         required: false
@@ -51,7 +51,6 @@ on:
 
 permissions:
   contents: write
-  models: read
   pull-requests: read
 
 jobs:
@@ -164,13 +163,14 @@ jobs:
             fi
           } > /tmp/prompt.txt
 
+      - name: Install Copilot CLI
+        run: npm install -g @github/copilot
+
       - name: Generate AI content
         id: ai
-        uses: actions/ai-inference@v2
+        uses: actions/ai-inference@v3
         with:
           model: ${{ inputs.model }}
-          max-completion-tokens: 2000
-          temperature: 0.5
           system-prompt: |
             You are a technical writer crafting release notes for an open source project used by everyday people, not just developers.
             Always refer to the project by its exact name as given in "Project name:" — do not substitute a different name.
