@@ -166,6 +166,30 @@ jobs:
       - name: Install Copilot CLI
         run: npm install -g @github/copilot
 
+      - name: Debug — verify COPILOT_PAT and Copilot access
+        env:
+          COPILOT_PAT: ${{ secrets.COPILOT_PAT }}
+        run: |
+          if [ -z "$COPILOT_PAT" ]; then
+            echo "::error::COPILOT_PAT secret is not set or empty"
+            exit 1
+          fi
+          echo "Token prefix: ${COPILOT_PAT:0:4}... (length: ${#COPILOT_PAT})"
+          echo "--- GitHub API user check ---"
+          curl -s -w "\nHTTP %{http_code}\n" \
+            -H "Authorization: Bearer $COPILOT_PAT" \
+            "https://api.github.com/user" | tail -5
+          echo "--- Copilot token exchange ---"
+          curl -s -w "\nHTTP %{http_code}\n" \
+            -H "Authorization: Bearer $COPILOT_PAT" \
+            -H "Editor-Version: vscode/1.85.0" \
+            -H "Editor-Plugin-Version: copilot/1.0.0" \
+            "https://api.github.com/copilot_internal/v2/token" | head -5
+          echo "--- Copilot models endpoint ---"
+          curl -s -w "\nHTTP %{http_code}\n" \
+            -H "Authorization: Bearer $COPILOT_PAT" \
+            "https://api.github.com/models" | head -3
+
       - name: Generate AI content
         id: ai
         uses: actions/ai-inference@v3
