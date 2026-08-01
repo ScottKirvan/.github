@@ -102,6 +102,8 @@ jobs:
       - name: Rewrite notes with AI
         id: ai
         uses: actions/ai-inference@v3
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_PAT }}
         with:
           model: ${{ inputs.model }}
           system-prompt: |
