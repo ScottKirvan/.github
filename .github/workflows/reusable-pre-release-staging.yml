@@ -163,6 +163,9 @@ jobs:
             fi
           } > /tmp/prompt.txt
 
+      - name: Install Copilot CLI
+        run: npm install -g @github/copilot
+
       - name: Generate AI content
         id: ai
         uses: actions/ai-inference@v3
