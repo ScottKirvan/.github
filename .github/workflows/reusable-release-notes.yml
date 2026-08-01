@@ -31,10 +31,10 @@ on:
         type: string
         default: notes/CHANGELOG.md
       model:
-        description: Copilot model identifier (e.g. gpt-4.1, claude-sonnet-4.5)
+        description: Copilot model identifier, or 'auto' to let Copilot pick
         required: false
         type: string
-        default: gpt-4o
+        default: auto
     outputs:
       discord_blurb:
         description: Compact Discord announcement generated alongside the release notes

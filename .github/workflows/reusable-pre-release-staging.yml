@@ -32,10 +32,10 @@ on:
         type: string
         default: ""
       model:
-        description: Copilot model identifier (e.g. gpt-4.1, claude-sonnet-4.5)
+        description: Copilot model identifier, or 'auto' to let Copilot pick
         required: false
         type: string
-        default: gpt-4o
+        default: auto
       base_branch:
         description: Branch to compare against previous release tag
         required: false
@@ -165,11 +165,6 @@ jobs:
 
       - name: Install Copilot CLI
         run: npm install -g @github/copilot
-
-      - name: List available Copilot models
-        env:
-          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_PAT }}
-        run: copilot --list-models 2>&1 || copilot --help 2>&1 || true
 
       - name: Generate AI content
         id: ai
