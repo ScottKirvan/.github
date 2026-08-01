@@ -34,7 +34,7 @@ on:
         description: Copilot model identifier (e.g. gpt-4.1, claude-sonnet-4.5)
         required: false
         type: string
-        default: gpt-4.1
+        default: gpt-4o
     outputs:
       discord_blurb:
         description: Compact Discord announcement generated alongside the release notes
