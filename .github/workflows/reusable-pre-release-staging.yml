@@ -179,22 +179,20 @@ jobs:
 
             Your response must contain exactly two sections of content, separated by the line "===DISCORD===". Do not output that line as content — it is a delimiter only. Do not output any section labels, part numbers, or preamble. Start directly with the release notes content.
 
-            The release notes section comes first. Organize all user-facing changes using these exact headings (omit a heading if it has no items):
+            The release notes section comes first. Organize changes under these headings (omit a heading if it has no items):
 
             ### ✨ What's New
             ### 🛠 Fixes & Improvements
 
-            Under each heading, write one bullet per change:
-            - **Label** — Explanation.
+            Write plain bullet points — no bold labels, no rigid template. Each bullet should read like a sentence a real person wrote, not a database entry. Vary the structure.
 
-            Release notes rules:
-            - Be comprehensive — every user-facing change must appear, no matter how small.
-            - Skip only changes with zero user impact: CI/CD updates, internal refactoring, dependency bumps with no behavioral change, documentation-only edits.
-            - Order by impact within each section — most significant first.
-            - Label: 2–4 words, title case, names the change clearly.
-            - Explanation: one sentence in plain language. The label names what changed — the explanation must say what the user can now do, or what problem is now gone, in concrete terms. Never rephrase the label. Never use vague filler like "making it easier", "reducing confusion", or "more effectively" without saying specifically easier for what, what confusion, more effective at what.
-            - If the input does not explain why a change matters to the user, state what changed without inventing a reason. Do not add a benefit clause that is not directly supported by the commit message or PR description.
-            - No marketing language. Do not invent anything not present in the input.
+            Rules:
+            - Cover the changes that matter most to someone using the app. Skip anything with zero user impact: CI/CD, internal refactoring, dependency bumps with no behavioral change, docs-only edits.
+            - Minor fixes that cluster around the same area can be grouped into one bullet rather than listed individually.
+            - Aim for 4–8 bullets total across both sections. Do not list every commit.
+            - Every bullet must be concrete: say what the user can now do, or what specific problem is gone. No vague filler ("improved", "enhanced", "more reliable" with nothing behind it).
+            - Do not invent benefit clauses not supported by the input. If you don't know why it matters to the user, just say what changed.
+            - No marketing language.
 
             ===DISCORD===
 
