@@ -212,6 +212,17 @@ jobs:
 
             Tone for Discord: conversational, direct, punchy. This is a chat message, not documentation.
             No sign-off. No extra text after the Discord section.
+
+            ===PLAYSTORE===
+
+            After that delimiter, write Play Store release notes. Rules:
+            - Plain text only. No markdown, no bold, no links, no URLs, no bullet symbols that require markdown (dashes are fine).
+            - Maximum 500 characters total — count carefully.
+            - Written for a general audience downloading the app, not developers.
+            - 3–5 short lines covering the most user-visible changes. Start with the most important.
+            - Each line should be one complete thought. No preamble, no sign-off.
+            - Do not mention version numbers, GitHub, or any external references.
+            - No extra text after the Play Store section.
           prompt-file: /tmp/prompt.txt
 
       - name: Assemble and save staged files
@@ -223,7 +234,8 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           RELEASE_NOTES=$(printf '%s' "$AI_NOTES" | awk '/^===DISCORD===$/{exit} {print}')
-          DISCORD_BLURB=$(printf '%s' "$AI_NOTES" | awk '/^===DISCORD===/{found=1; next} found{print}')
+          DISCORD_BLURB=$(printf '%s' "$AI_NOTES" | awk '/^===DISCORD===/{found=1; next} /^===PLAYSTORE===/{exit} found{print}')
+          PLAY_STORE_NOTES=$(printf '%s' "$AI_NOTES" | awk '/^===PLAYSTORE===/{found=1; next} found{print}' | cut -c1-500)
 
           TRIMMED_FOOTER=$(printf '%s' "$FOOTER" | sed 's/[[:space:]]*$//')
           if [ -n "$CHANGELOG_PATH" ]; then
@@ -244,11 +256,14 @@ jobs:
           } > .github/tmp/pre-release-staging/release-notes.md
 
           printf '%s\n' "$DISCORD_BLURB" > .github/tmp/pre-release-staging/discord-blurb.txt
+          printf '%s\n' "$PLAY_STORE_NOTES" > .github/tmp/pre-release-staging/play-store-notes.txt
 
           echo "--- release-notes.md ---"
           cat .github/tmp/pre-release-staging/release-notes.md
           echo "--- discord-blurb.txt ---"
           cat .github/tmp/pre-release-staging/discord-blurb.txt
+          echo "--- play-store-notes.txt ---"
+          cat .github/tmp/pre-release-staging/play-store-notes.txt
 
       - name: Commit and push staging branch
         env:
