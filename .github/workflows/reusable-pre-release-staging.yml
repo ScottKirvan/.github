@@ -32,10 +32,10 @@ on:
         type: string
         default: ""
       model:
-        description: Copilot model identifier, or 'auto' to let Copilot pick
+        description: Gemini model identifier
         required: false
         type: string
-        default: auto
+        default: gemini-2.5-flash
       base_branch:
         description: Branch to compare against previous release tag
         required: false
@@ -168,63 +168,79 @@ jobs:
             fi
           } > /tmp/prompt.txt
 
-      - name: Install Copilot CLI
-        run: npm install -g @github/copilot
-
       - name: Generate AI content
         id: ai
-        uses: actions/ai-inference@v3
         env:
-          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_PAT }}
-        with:
-          model: ${{ inputs.model }}
-          system-prompt: |
-            You are a technical writer crafting release notes for an open source project used by everyday people, not just developers.
-            Always refer to the project by its exact name as given in "Project name:" — do not substitute a different name.
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          MODEL: ${{ inputs.model }}
+        run: |
+          cat > /tmp/system_prompt.txt << 'SYSTEM_EOF'
+          You are a technical writer crafting release notes for an open source project used by everyday people, not just developers.
+          Always refer to the project by its exact name as given in "Project name:" — do not substitute a different name.
 
-            Your response must contain exactly two sections of content, separated by the line "===DISCORD===". Do not output that line as content — it is a delimiter only. Do not output any section labels, part numbers, or preamble. Start directly with the release notes content.
+          Your response must contain exactly two sections of content, separated by the line "===DISCORD===". Do not output that line as content — it is a delimiter only. Do not output any section labels, part numbers, or preamble. Start directly with the release notes content.
 
-            The release notes section comes first. Use these headings as appropriate:
+          The release notes section comes first. Use these headings as appropriate:
 
-            ### ✨ What's New
-            ### 🛠 Fixes & Improvements
+          ### ✨ What's New
+          ### 🛠 Fixes & Improvements
 
-            If the input says "This is the first public release", treat the entire release as an introduction — write everything under "What's New" and frame it as "here's what this app does" rather than "here's what changed." Do not use "Fixes & Improvements" for a first release unless there were notable bugs fixed during the development cycle that users should know about.
+          If the input says "This is the first public release", treat the entire release as an introduction — write everything under "What's New" and frame it as "here's what this app does" rather than "here's what changed." Do not use "Fixes & Improvements" for a first release unless there were notable bugs fixed during the development cycle that users should know about.
 
-            For subsequent releases, use "What's New" for features and capabilities that didn't exist before, and "Fixes & Improvements" for corrections and refinements to existing behavior. Omit a heading if it genuinely has nothing to put under it.
+          For subsequent releases, use "What's New" for features and capabilities that didn't exist before, and "Fixes & Improvements" for corrections and refinements to existing behavior. Omit a heading if it genuinely has nothing to put under it.
 
-            Write plain bullet points — no bold labels, no rigid template. Each bullet should read like a sentence a real person wrote, not a database entry. Vary the structure.
+          Write plain bullet points — no bold labels, no rigid template. Each bullet should read like a sentence a real person wrote, not a database entry. Vary the structure.
 
-            Rules:
-            - Cover the changes that matter most to someone using the app. Skip anything with zero user impact: CI/CD, internal refactoring, dependency bumps with no behavioral change, docs-only edits.
-            - Minor fixes that cluster around the same area can be grouped into one bullet rather than listed individually.
-            - Aim for 4–8 bullets total across both sections. Do not list every commit.
-            - Every bullet must be concrete: say what the user can now do, or what specific problem is gone. No vague filler ("improved", "enhanced", "more reliable" with nothing behind it).
-            - Do not invent benefit clauses not supported by the input. If you don't know why it matters to the user, just say what changed.
-            - No marketing language.
+          Rules:
+          - Cover the changes that matter most to someone using the app. Skip anything with zero user impact: CI/CD, internal refactoring, dependency bumps with no behavioral change, docs-only edits.
+          - Minor fixes that cluster around the same area can be grouped into one bullet rather than listed individually.
+          - Aim for 4–8 bullets total across both sections. Do not list every commit.
+          - Every bullet must be concrete: say what the user can now do, or what specific problem is gone. No vague filler ("improved", "enhanced", "more reliable" with nothing behind it).
+          - Do not invent benefit clauses not supported by the input. If you don't know why it matters to the user, just say what changed.
+          - No marketing language.
 
-            ===DISCORD===
+          ===DISCORD===
 
-            After the delimiter, write a short Discord announcement. 4–6 lines total:
-            - Line 1: one energetic sentence naming the project, version, and the headline change. No exclamation points — conviction, not hype.
-            - Lines 2–4: 2–3 tight bullet highlights (the biggest changes only). One short phrase each, starting with a dash.
-            - Final line: "Full notes + downloads →" (leave the URL as-is; it will be filled in automatically).
+          After the delimiter, write a short Discord announcement. 4–6 lines total:
+          - Line 1: one energetic sentence naming the project, version, and the headline change. No exclamation points — conviction, not hype.
+          - Lines 2–4: 2–3 tight bullet highlights (the biggest changes only). One short phrase each, starting with a dash.
+          - Final line: "Full notes + downloads →" (leave the URL as-is; it will be filled in automatically).
 
-            Tone for Discord: conversational, direct, punchy. This is a chat message, not documentation.
-            No sign-off. No extra text after the Discord section.
+          Tone for Discord: conversational, direct, punchy. This is a chat message, not documentation.
+          No sign-off. No extra text after the Discord section.
 
-            ===PLAYSTORE===
+          ===PLAYSTORE===
 
-            After that delimiter, write Play Store "What's new" release notes. Rules:
-            - Plain text only. No markdown, no bold, no links, no URLs.
-            - Use "What's New:" and "What's Fixed:" as plain-text section headers, each on its own line. Only include a section if it has content.
-            - Under each header, list changes as short lines starting with a dash. Put each bullet on its own line.
-            - Leave a blank line between sections.
-            - Aim to fill close to 500 characters — do not be sparse. Count carefully and do not exceed 500 characters.
-            - Written for a general audience downloading the app, not developers.
-            - Do not mention version numbers, GitHub, or any external references.
-            - No preamble, no sign-off. No extra text after the Play Store section.
-          prompt-file: /tmp/prompt.txt
+          After that delimiter, write Play Store "What's new" release notes. Rules:
+          - Plain text only. No markdown, no bold, no links, no URLs.
+          - Use "What's New:" and "What's Fixed:" as plain-text section headers, each on its own line. Only include a section if it has content.
+          - Under each header, list changes as short lines starting with a dash. Put each bullet on its own line.
+          - Leave a blank line between sections.
+          - Aim to fill close to 500 characters — do not be sparse. Count carefully and do not exceed 500 characters.
+          - Written for a general audience downloading the app, not developers.
+          - Do not mention version numbers, GitHub, or any external references.
+          - No preamble, no sign-off. No extra text after the Play Store section.
+          SYSTEM_EOF
+
+          RESPONSE=$(curl -sf \
+            "https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=$GEMINI_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n \
+              --rawfile system /tmp/system_prompt.txt \
+              --rawfile prompt /tmp/prompt.txt \
+              '{systemInstruction: {parts: [{text: $system}]}, contents: [{role: "user", parts: [{text: $prompt}]}]}')")
+
+          AI_TEXT=$(printf '%s' "$RESPONSE" | jq -r '.candidates[0].content.parts[0].text // empty')
+          if [ -z "$AI_TEXT" ]; then
+            echo "::error::Gemini returned no content. Response: $RESPONSE"
+            exit 1
+          fi
+
+          {
+            echo 'response<<AI_EOF'
+            printf '%s\n' "$AI_TEXT"
+            echo 'AI_EOF'
+          } >> "$GITHUB_OUTPUT"
 
       - name: Assemble and save staged files
         env:
