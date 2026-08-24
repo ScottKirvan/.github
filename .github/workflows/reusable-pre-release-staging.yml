@@ -143,7 +143,7 @@ jobs:
 
           # Fetch PR bodies for referenced PRs
           if [ -f /tmp/commits.txt ]; then
-            grep -oE '#[0-9]+' /tmp/commits.txt | tr -d '#' | sort -u | while read PR_NUM; do
+            grep -oE '#[0-9]+' /tmp/commits.txt | tr -d '#' | sort -u | while IFS= read -r PR_NUM; do
               gh pr view "$PR_NUM" --repo "$REPO" --json title,body \
                 --jq '"### PR #\(env.PR_NUM): \(.title)\n\(.body)"' 2>/dev/null || true
             done > /tmp/pr_bodies.txt
