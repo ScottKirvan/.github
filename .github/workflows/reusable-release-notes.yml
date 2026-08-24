@@ -34,7 +34,7 @@ on:
         description: Gemini model identifier
         required: false
         type: string
-        default: gemini-2.5-flash
+        default: gemini-3.6-flash
     outputs:
       discord_blurb:
         description: Compact Discord announcement generated alongside the release notes
