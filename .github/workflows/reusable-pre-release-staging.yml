@@ -222,17 +222,27 @@ jobs:
           - No preamble, no sign-off. No extra text after the Play Store section.
           SYSTEM_EOF
 
-          RESPONSE=$(curl -sf \
+          REQUEST_BODY=$(jq -n \
+            --rawfile system /tmp/system_prompt.txt \
+            --rawfile prompt /tmp/prompt.txt \
+            '{systemInstruction: {parts: [{text: $system}]}, contents: [{role: "user", parts: [{text: $prompt}]}]}')
+
+          HTTP_CODE=$(curl -s -o /tmp/gemini_response.json -w "%{http_code}" \
             "https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=$GEMINI_API_KEY" \
             -H "Content-Type: application/json" \
-            -d "$(jq -n \
-              --rawfile system /tmp/system_prompt.txt \
-              --rawfile prompt /tmp/prompt.txt \
-              '{systemInstruction: {parts: [{text: $system}]}, contents: [{role: "user", parts: [{text: $prompt}]}]}')")
+            -d "$REQUEST_BODY")
 
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Gemini API returned HTTP $HTTP_CODE"
+            echo "Response body:"
+            cat /tmp/gemini_response.json
+            exit 1
+          fi
+
+          RESPONSE=$(cat /tmp/gemini_response.json)
           AI_TEXT=$(printf '%s' "$RESPONSE" | jq -r '.candidates[0].content.parts[0].text // empty')
           if [ -z "$AI_TEXT" ]; then
-            echo "::error::Gemini returned no content. Response: $RESPONSE"
+            echo "::error::Gemini returned HTTP 200 but no text content. Response: $RESPONSE"
             exit 1
           fi
 
