@@ -133,19 +133,34 @@ jobs:
 
           if [ -n "$PREV_TAG" ]; then
             gh api "repos/$REPO/compare/$PREV_TAG...$BASE_BRANCH" \
-              --jq '.commits[] | "- " + (.commit.message | split("\n") | .[0])' \
+              --jq '.commits[] | .commit.message + "\n"' \
               > /tmp/commits.txt 2>/dev/null || true
           else
             gh api "repos/$REPO/commits?sha=$BASE_BRANCH&per_page=20" \
-              --jq '.[] | "- " + (.commit.message | split("\n") | .[0])' \
+              --jq '.[].commit.message + "\n"' \
               > /tmp/commits.txt 2>/dev/null || true
           fi
 
-          # Fetch PR bodies for referenced PRs
+          # Fetch bodies for referenced PRs and issues.
+          # Commit subjects in some repos use (#NNN) to reference the closing issue,
+          # not the PR — so try gh pr view first, fall back to gh issue view.
           if [ -f /tmp/commits.txt ]; then
-            grep -oE '#[0-9]+' /tmp/commits.txt | tr -d '#' | sort -u | while IFS= read -r PR_NUM; do
-              gh pr view "$PR_NUM" --repo "$REPO" --json title,body \
-                --jq '"### PR #\(env.PR_NUM): \(.title)\n\(.body)"' 2>/dev/null || true
+            grep -oE '#[0-9]+' /tmp/commits.txt | tr -d '#' | sort -u | while IFS= read -r NUM; do
+              PR_JSON=$(gh pr view "$NUM" --repo "$REPO" --json title,body 2>/dev/null)
+              if [ -n "$PR_JSON" ]; then
+                TITLE=$(printf '%s' "$PR_JSON" | jq -r '.title')
+                BODY=$(printf '%s' "$PR_JSON" | jq -r '.body // ""')
+                printf '### PR #%s: %s\n%s\n\n' "$NUM" "$TITLE" "$BODY"
+              else
+                ISSUE_JSON=$(gh issue view "$NUM" --repo "$REPO" --json title,body 2>/dev/null)
+                if [ -n "$ISSUE_JSON" ]; then
+                  TITLE=$(printf '%s' "$ISSUE_JSON" | jq -r '.title')
+                  BODY=$(printf '%s' "$ISSUE_JSON" | jq -r '.body // ""')
+                  printf '### Issue #%s: %s\n%s\n\n' "$NUM" "$TITLE" "$BODY"
+                else
+                  echo "::warning::#$NUM did not resolve as a PR or issue — skipping"
+                fi
+              fi
             done > /tmp/pr_bodies.txt
           fi
 
