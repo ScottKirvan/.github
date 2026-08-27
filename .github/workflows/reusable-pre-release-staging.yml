@@ -131,38 +131,60 @@ jobs:
           PREV_TAG=$(gh release list --repo "$REPO" --limit 20 --json tagName,publishedAt,isDraft \
             | jq -r '[.[] | select(.isDraft == false)] | sort_by(.publishedAt) | reverse | .[0].tagName // ""')
 
+          # Fetch commits (SHA + full message) in a single API call
           if [ -n "$PREV_TAG" ]; then
             gh api "repos/$REPO/compare/$PREV_TAG...$BASE_BRANCH" \
-              --jq '.commits[] | .commit.message + "\n"' \
-              > /tmp/commits.txt 2>/dev/null || true
+              --jq '.commits[] | {"sha": .sha, "message": .commit.message}' \
+              > /tmp/commits_raw.json 2>/dev/null || true
           else
             gh api "repos/$REPO/commits?sha=$BASE_BRANCH&per_page=20" \
-              --jq '.[].commit.message + "\n"' \
-              > /tmp/commits.txt 2>/dev/null || true
+              --jq '.[] | {"sha": .sha, "message": .commit.message}' \
+              > /tmp/commits_raw.json 2>/dev/null || true
           fi
 
-          # Fetch bodies for referenced PRs and issues.
-          # Commit subjects in some repos use (#NNN) to reference the closing issue,
-          # not the PR — so try gh pr view first, fall back to gh issue view.
-          if [ -f /tmp/commits.txt ]; then
-            grep -oE '#[0-9]+' /tmp/commits.txt | tr -d '#' | sort -u | while IFS= read -r NUM; do
-              PR_JSON=$(gh pr view "$NUM" --repo "$REPO" --json title,body 2>/dev/null)
-              if [ -n "$PR_JSON" ]; then
-                TITLE=$(printf '%s' "$PR_JSON" | jq -r '.title')
-                BODY=$(printf '%s' "$PR_JSON" | jq -r '.body // ""')
-                printf '### PR #%s: %s\n%s\n\n' "$NUM" "$TITLE" "$BODY"
-              else
-                ISSUE_JSON=$(gh issue view "$NUM" --repo "$REPO" --json title,body 2>/dev/null)
+          if [ -f /tmp/commits_raw.json ] && [ -s /tmp/commits_raw.json ]; then
+            jq -r '.message + "\n"' /tmp/commits_raw.json > /tmp/commits.txt || true
+            jq -r '.sha' /tmp/commits_raw.json > /tmp/shas.txt || true
+          fi
+
+          # Look up PRs by commit SHA — works regardless of commit message convention
+          # (commits are written before the PR exists, so #NNN in subjects is always an issue ref)
+          PR_NUMS=""
+          if [ -f /tmp/shas.txt ] && [ -s /tmp/shas.txt ]; then
+            while IFS= read -r SHA; do
+              [ -z "$SHA" ] && continue
+              NUM=$(gh api "repos/$REPO/commits/$SHA/pulls" \
+                --jq '.[0].number // empty' 2>/dev/null) || true
+              if [ -n "$NUM" ]; then
+                PR_NUMS="${PR_NUMS}"$'\n'"${NUM}"
+              fi
+            done < /tmp/shas.txt
+          fi
+
+          # Fetch PR bodies (via SHA lookup) and issue bodies (from #NNN commit references)
+          {
+            if [ -n "$PR_NUMS" ]; then
+              printf '%s\n' "$PR_NUMS" | sort -u | grep -v '^$' | while IFS= read -r NUM; do
+                PR_JSON=$(gh api "repos/$REPO/pulls/$NUM" --json title,body 2>/dev/null) || true
+                if [ -n "$PR_JSON" ]; then
+                  TITLE=$(printf '%s' "$PR_JSON" | jq -r '.title')
+                  BODY=$(printf '%s' "$PR_JSON" | jq -r '.body // ""')
+                  printf '### PR #%s: %s\n%s\n\n' "$NUM" "$TITLE" "$BODY"
+                fi
+              done || true
+            fi
+
+            if [ -f /tmp/commits.txt ] && [ -s /tmp/commits.txt ]; then
+              grep -oE '#[0-9]+' /tmp/commits.txt | tr -d '#' | sort -u | while IFS= read -r NUM; do
+                ISSUE_JSON=$(gh issue view "$NUM" --repo "$REPO" --json title,body 2>/dev/null) || true
                 if [ -n "$ISSUE_JSON" ]; then
                   TITLE=$(printf '%s' "$ISSUE_JSON" | jq -r '.title')
                   BODY=$(printf '%s' "$ISSUE_JSON" | jq -r '.body // ""')
                   printf '### Issue #%s: %s\n%s\n\n' "$NUM" "$TITLE" "$BODY"
-                else
-                  echo "::warning::#$NUM did not resolve as a PR or issue — skipping"
                 fi
-              fi
-            done > /tmp/pr_bodies.txt
-          fi
+              done || true
+            fi
+          } > /tmp/pr_bodies.txt || true
 
           {
             printf 'Project name: %s\n' "$PROJECT_NAME"
