@@ -146,13 +146,13 @@ jobs:
           # not the PR — so try gh pr view first, fall back to gh issue view.
           if [ -f /tmp/commits.txt ]; then
             grep -oE '#[0-9]+' /tmp/commits.txt | tr -d '#' | sort -u | while IFS= read -r NUM; do
-              PR_JSON=$(gh pr view "$NUM" --repo "$REPO" --json title,body 2>/dev/null)
+              PR_JSON=$(gh pr view "$NUM" --repo "$REPO" --json title,body 2>/dev/null) || true
               if [ -n "$PR_JSON" ]; then
                 TITLE=$(printf '%s' "$PR_JSON" | jq -r '.title')
                 BODY=$(printf '%s' "$PR_JSON" | jq -r '.body // ""')
                 printf '### PR #%s: %s\n%s\n\n' "$NUM" "$TITLE" "$BODY"
               else
-                ISSUE_JSON=$(gh issue view "$NUM" --repo "$REPO" --json title,body 2>/dev/null)
+                ISSUE_JSON=$(gh issue view "$NUM" --repo "$REPO" --json title,body 2>/dev/null) || true
                 if [ -n "$ISSUE_JSON" ]; then
                   TITLE=$(printf '%s' "$ISSUE_JSON" | jq -r '.title')
                   BODY=$(printf '%s' "$ISSUE_JSON" | jq -r '.body // ""')
@@ -161,7 +161,7 @@ jobs:
                   echo "::warning::#$NUM did not resolve as a PR or issue — skipping"
                 fi
               fi
-            done > /tmp/pr_bodies.txt
+            done > /tmp/pr_bodies.txt || true
           fi
 
           {
