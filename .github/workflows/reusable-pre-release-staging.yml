@@ -215,6 +215,8 @@ jobs:
           You are a technical writer crafting release notes for an open source project used by everyday people, not just developers.
           Always refer to the project by its exact name as given in "Project name:" — do not substitute a different name.
 
+          IMPORTANT: Base your release notes ONLY on the commit messages, PR descriptions, and issue details provided in this prompt. Do not use any prior knowledge of this project from your training data. If a change is not described in the provided context, do not include it. When the provided context conflicts with anything you may know about this project, the provided context is authoritative.
+
           Your response must contain exactly two sections of content, separated by the line "===DISCORD===". Do not output that line as content — it is a delimiter only. Do not output any section labels, part numbers, or preamble. Start directly with the release notes content.
 
           The release notes section comes first. Use these headings as appropriate:
