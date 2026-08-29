@@ -35,7 +35,7 @@ on:
         description: Gemini model identifier
         required: false
         type: string
-        default: gemini-3.6-flash
+        default: gemini-3.7-flash
       base_branch:
         description: Branch to compare against previous release tag
         required: false
