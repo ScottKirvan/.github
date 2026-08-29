@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: read
 
 jobs:
   update-prs:
@@ -56,9 +57,9 @@ jobs:
           # Collect PR numbers (hyperlinked) for each commit, then deduplicate
           : > /tmp/prs_raw.txt
           while IFS= read -r SHA; do
-            gh api "repos/$REPO/commits/$SHA/pulls" \
-              --jq '.[] | "[#\(.number)](\(.html_url))"' \
-              2>/dev/null >> /tmp/prs_raw.txt || true
+            RESULT=$(gh api "repos/$REPO/commits/$SHA/pulls" \
+              --jq '.[] | "[#\(.number)](\(.html_url))"' 2>/dev/null) && \
+              printf '%s\n' "$RESULT" >> /tmp/prs_raw.txt || true
           done <<< "$SHAS"
 
           sort -u /tmp/prs_raw.txt > /tmp/prs.txt
