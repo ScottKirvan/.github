@@ -57,9 +57,10 @@ jobs:
           # Collect PR numbers (hyperlinked) for each commit, then deduplicate
           : > /tmp/prs_raw.txt
           while IFS= read -r SHA; do
-            RESULT=$(gh api "repos/$REPO/commits/$SHA/pulls" \
-              --jq '.[] | "[#\(.number)](\(.html_url))"' 2>/dev/null) && \
-              printf '%s\n' "$RESULT" >> /tmp/prs_raw.txt || true
+            if RESULT=$(gh api "repos/$REPO/commits/$SHA/pulls" \
+              --jq '.[] | "[#\(.number)](\(.html_url))"' 2>/dev/null); then
+              printf '%s\n' "$RESULT" >> /tmp/prs_raw.txt
+            fi
           done <<< "$SHAS"
 
           sort -u /tmp/prs_raw.txt > /tmp/prs.txt
