@@ -32,10 +32,10 @@ jobs:
           CHANGELOG_PATH: ${{ inputs.changelog_path }}
           REPO: ${{ github.repository }}
         run: |
-          # Find the previous release tag (the entry immediately after TAG in the list)
-          PREV_TAG=$(gh release list --repo "$REPO" --limit 50 --json tagName \
+          # Find the previous release tag (drafts excluded to avoid matching pre-publish drafts)
+          PREV_TAG=$(gh release list --repo "$REPO" --limit 50 --json tagName,isDraft \
             | jq -r --arg tag "$TAG" \
-            '[.[].tagName] | index($tag) as $i | if $i != null and $i < (length - 1) then .[$i + 1] else "null" end')
+            '[.[] | select(.isDraft == false) | .tagName] | index($tag) as $i | if $i != null and $i < (length - 1) then .[$i + 1] else "null" end')
 
           if [ -z "$PREV_TAG" ] || [ "$PREV_TAG" = "null" ]; then
             echo "No previous release found — skipping PR link update"
