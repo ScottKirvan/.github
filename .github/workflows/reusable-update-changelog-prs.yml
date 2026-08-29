@@ -63,7 +63,7 @@ jobs:
             fi
           done <<< "$SHAS"
 
-          sort -u /tmp/prs_raw.txt > /tmp/prs.txt
+          sort -u /tmp/prs_raw.txt | grep -v '^$' > /tmp/prs.txt
 
           if [ ! -s /tmp/prs.txt ]; then
             echo "No PRs found for this release — skipping"
