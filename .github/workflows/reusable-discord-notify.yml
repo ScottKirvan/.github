@@ -76,4 +76,5 @@ jobs:
               }]
             }')
 
-          curl -fsSL -H "Content-Type: application/json" -X POST -d "$PAYLOAD" "$DISCORD_WEBHOOK"
+          curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors \
+            -H "Content-Type: application/json" -X POST -d "$PAYLOAD" "$DISCORD_WEBHOOK"
