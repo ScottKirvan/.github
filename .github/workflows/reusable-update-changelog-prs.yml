@@ -54,7 +54,7 @@ jobs:
           fi
 
           # Build full_sha → PR number + URL mapping
-          > /tmp/sha_pr_map.txt
+          : > /tmp/sha_pr_map.txt
           while IFS= read -r SHA; do
             PR=$(gh api "repos/$REPO/commits/$SHA/pulls" \
               --jq '.[0] | select(. != null) | "\(.number)\t\(.html_url)"' \
