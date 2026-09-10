@@ -93,10 +93,10 @@ jobs:
               content = f.read()
 
           # Pattern: ([display_sha](https://github.com/owner/repo/commit/full_sha))
-          # display_sha is typically 7 chars; full_sha is in the URL
+          # Markdown link [text](url) wrapped in outer parens — all one token
           commit_re = re.compile(
-              r'\(([0-9a-f]{6,40})\)'
-              r'\(https://github\.com/[^/]+/[^/]+/commit/([0-9a-f]{40})\)'
+              r'\(\[([0-9a-f]{6,40})\]'
+              r'\(https://github\.com/[^/]+/[^/]+/commit/([0-9a-f]{40})\)\)'
           )
 
           def replace_sha(m):
