@@ -65,19 +65,41 @@ jobs:
             | jq -r --arg tag "$TAG" \
             '[.[] | select(.tagName != $tag)] | sort_by(.publishedAt) | reverse | .[0].tagName // ""')
 
-          # Fetch commit messages between tags
+          # Fetch commits (SHA + first line of message) between tags
           if [ -n "$PREV_TAG" ]; then
             gh api "repos/$REPO/compare/$PREV_TAG...$TAG" \
-              --jq '.commits[] | "- " + (.commit.message | split("\n") | .[0])' \
-              > /tmp/commits.txt 2>/dev/null || true
+              --jq '.commits[] | {"sha": .sha, "message": (.commit.message | split("\n") | .[0])}' \
+              > /tmp/commits_raw.json 2>/dev/null || true
           fi
 
-          # Extract PR numbers from commit messages and fetch PR title + body
-          if [ -f /tmp/commits.txt ]; then
-            grep -oE '#[0-9]+' /tmp/commits.txt | tr -d '#' | sort -u | while IFS= read -r PR_NUM; do
-              gh pr view "$PR_NUM" --repo "$REPO" --json title,body \
-                --jq '"### PR #\(env.PR_NUM): \(.title)\n\(.body)"' 2>/dev/null || true
-            done > /tmp/pr_bodies.txt
+          if [ -f /tmp/commits_raw.json ] && [ -s /tmp/commits_raw.json ]; then
+            jq -r '.message' /tmp/commits_raw.json > /tmp/commits.txt || true
+            jq -r '.sha' /tmp/commits_raw.json > /tmp/shas.txt || true
+          fi
+
+          # Build commit-to-PR mapping via SHA lookup (works with rebase merge)
+          > /tmp/pr_map.txt
+          > /tmp/pr_bodies.txt
+          declare -A SEEN_PRS
+          if [ -f /tmp/shas.txt ] && [ -s /tmp/shas.txt ]; then
+            paste /tmp/shas.txt /tmp/commits.txt | while IFS=$'\t' read -r SHA MSG; do
+              [ -z "$SHA" ] && continue
+              NUM=$(gh api "repos/$REPO/commits/$SHA/pulls" \
+                --jq '.[0].number // empty' 2>/dev/null) || true
+              if [ -n "$NUM" ]; then
+                PR_URL="https://github.com/$REPO/pull/$NUM"
+                printf -- '- "%s" → [#%s](%s)\n' "$MSG" "$NUM" "$PR_URL" >> /tmp/pr_map.txt
+                # Fetch PR body once per unique PR
+                if ! grep -q "^### PR #${NUM}:" /tmp/pr_bodies.txt 2>/dev/null; then
+                  PR_JSON=$(gh api "repos/$REPO/pulls/$NUM" --json title,body 2>/dev/null) || true
+                  if [ -n "$PR_JSON" ]; then
+                    TITLE=$(printf '%s' "$PR_JSON" | jq -r '.title')
+                    BODY=$(printf '%s' "$PR_JSON" | jq -r '.body // ""')
+                    printf '### PR #%s: %s\n%s\n\n' "$NUM" "$TITLE" "$BODY" >> /tmp/pr_bodies.txt
+                  fi
+                fi
+              fi
+            done
           fi
 
           # Assemble full prompt
@@ -93,7 +115,11 @@ jobs:
             cat /tmp/raw_notes.md
             if [ -f /tmp/commits.txt ] && [ -s /tmp/commits.txt ]; then
               printf '\n## Commits in this release\n'
-              cat /tmp/commits.txt
+              sed 's/^/- /' /tmp/commits.txt
+            fi
+            if [ -f /tmp/pr_map.txt ] && [ -s /tmp/pr_map.txt ]; then
+              printf '\n## Commit-to-PR mapping (use for inline PR links)\n'
+              cat /tmp/pr_map.txt
             fi
             if [ -f /tmp/pr_bodies.txt ] && [ -s /tmp/pr_bodies.txt ]; then
               printf '\n## Merged pull request details\n'
@@ -131,6 +157,7 @@ jobs:
           - Every bullet must be concrete: say what the user can now do, or what specific problem is gone. No vague filler ("improved", "enhanced", "more reliable" with nothing behind it).
           - Do not invent benefit clauses not supported by the input. If you don't know why it matters to the user, just say what changed.
           - No marketing language.
+          - If a "Commit-to-PR mapping" section is provided, end each bullet with the relevant PR link: `([#N](url))`. When a bullet covers multiple commits from different PRs, use the most representative one. Do not generate a separate PR list at the end.
 
           ===DISCORD===
 
