@@ -366,7 +366,7 @@ jobs:
           STAGING_BRANCH: ${{ steps.version.outputs.staging_branch }}
           TAG: ${{ steps.version.outputs.tag_name }}
         run: |
-          git add .github/tmp/pre-release-staging/
+          git add -f .github/tmp/pre-release-staging/
           git commit -m "chore: pre-release staging for $TAG"
           git push origin "$STAGING_BRANCH" --force
           echo "Staging branch pushed: $STAGING_BRANCH"
