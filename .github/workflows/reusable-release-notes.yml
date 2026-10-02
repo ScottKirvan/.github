@@ -148,22 +148,47 @@ jobs:
             --rawfile prompt /tmp/prompt.txt \
             '{systemInstruction: {parts: [{text: $system}]}, contents: [{role: "user", parts: [{text: $prompt}]}]}')
 
-          for attempt in 1 2 3; do
-            HTTP_CODE=$(curl -s -o /tmp/gemini_response.json -w "%{http_code}" \
-              "https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=$GEMINI_API_KEY" \
-              -H "Content-Type: application/json" \
-              -d "$REQUEST_BODY")
-            [ "$HTTP_CODE" = "200" ] && break
-            echo "Gemini API attempt $attempt returned HTTP $HTTP_CODE"
-            [ "$attempt" -lt 3 ] && sleep $((attempt * 5))
+          # Build model list: primary + fallback (deduplicated)
+          FALLBACK_MODEL="gemini-2.5-flash"
+          if [ "$MODEL" = "$FALLBACK_MODEL" ]; then
+            MODEL_LIST="$MODEL"
+          else
+            MODEL_LIST="$MODEL $FALLBACK_MODEL"
+          fi
+
+          HTTP_CODE="000"
+          MODEL_USED=""
+
+          for CURRENT_MODEL in $MODEL_LIST; do
+            echo "Trying model: $CURRENT_MODEL"
+            for attempt in 1 2 3 4 5; do
+              HTTP_CODE=$(curl -s -o /tmp/gemini_response.json -w "%{http_code}" \
+                "https://generativelanguage.googleapis.com/v1beta/models/${CURRENT_MODEL}:generateContent?key=$GEMINI_API_KEY" \
+                -H "Content-Type: application/json" \
+                -d "$REQUEST_BODY")
+              if [ "$HTTP_CODE" = "200" ]; then
+                MODEL_USED="$CURRENT_MODEL"
+                break 2
+              fi
+              echo "Attempt $attempt/5 for $CURRENT_MODEL returned HTTP $HTTP_CODE"
+              if [ "$attempt" -lt 5 ]; then
+                BACKOFF=$(( 2 ** attempt ))
+                JITTER=$(( RANDOM % 3 ))
+                echo "Waiting $(( BACKOFF + JITTER ))s before retry..."
+                sleep $(( BACKOFF + JITTER ))
+              fi
+            done
+            echo "All attempts exhausted for $CURRENT_MODEL, trying fallback model..."
           done
 
           if [ "$HTTP_CODE" != "200" ]; then
-            echo "::error::Gemini API failed after 3 attempts, last HTTP $HTTP_CODE"
+            echo "::error::Gemini API failed on all models after retries. Last HTTP $HTTP_CODE"
             echo "Response body:"
             cat /tmp/gemini_response.json
             exit 1
           fi
+
+          echo "Success with model: $MODEL_USED"
 
           RESPONSE=$(cat /tmp/gemini_response.json)
           AI_TEXT=$(printf '%s' "$RESPONSE" | jq -r '.candidates[0].content.parts[0].text // empty')
