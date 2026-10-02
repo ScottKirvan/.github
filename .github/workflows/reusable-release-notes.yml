@@ -149,7 +149,7 @@ jobs:
             '{systemInstruction: {parts: [{text: $system}]}, contents: [{role: "user", parts: [{text: $prompt}]}]}')
 
           # Build model list: primary + fallback (deduplicated)
-          FALLBACK_MODEL="gemini-2.5-flash"
+          FALLBACK_MODEL="gemini-2.0-flash"
           if [ "$MODEL" = "$FALLBACK_MODEL" ]; then
             MODEL_LIST="$MODEL"
           else
