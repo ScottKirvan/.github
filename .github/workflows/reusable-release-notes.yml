@@ -143,10 +143,14 @@ jobs:
           No sign-off. No extra text after the Discord section.
           SYSTEM_EOF
 
-          REQUEST_BODY=$(jq -n \
+          # Sent from a file: a large release (many commits/PR bodies) overflows
+          # the kernel's per-argument limit if passed to curl as -d "$BODY".
+          jq -n \
             --rawfile system /tmp/system_prompt.txt \
             --rawfile prompt /tmp/prompt.txt \
-            '{systemInstruction: {parts: [{text: $system}]}, contents: [{role: "user", parts: [{text: $prompt}]}]}')
+            '{systemInstruction: {parts: [{text: $system}]}, contents: [{role: "user", parts: [{text: $prompt}]}]}' \
+            > /tmp/gemini_request.json
+          echo "Request size: $(wc -c < /tmp/gemini_request.json) bytes"
 
           # Build model list: primary + fallback (deduplicated)
           FALLBACK_MODEL="gemini-3.5-flash"
@@ -165,7 +169,7 @@ jobs:
               HTTP_CODE=$(curl -s -o /tmp/gemini_response.json -w "%{http_code}" \
                 "https://generativelanguage.googleapis.com/v1beta/models/${CURRENT_MODEL}:generateContent?key=$GEMINI_API_KEY" \
                 -H "Content-Type: application/json" \
-                -d "$REQUEST_BODY")
+                --data-binary @/tmp/gemini_request.json)
               if [ "$HTTP_CODE" = "200" ]; then
                 MODEL_USED="$CURRENT_MODEL"
                 break 2
