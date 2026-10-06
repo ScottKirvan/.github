@@ -125,4 +125,16 @@ jobs:
             exit 0
           fi
           git commit -m "chore: replace commit SHA links with PR links in changelog for $TAG"
-          git push
+          # Other release jobs may push to main at the same time; rebase and retry.
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then exit 0; fi
+            echo "Push rejected (attempt $attempt), rebasing onto main"
+            sleep $((attempt * 3))
+            if ! git pull --rebase origin main; then
+              git rebase --abort || true
+              echo "::error::Rebasing the changelog commit failed"
+              exit 1
+            fi
+          done
+          echo "::error::Could not push the changelog update"
+          exit 1
