@@ -58,9 +58,9 @@ jobs:
           PROJECT_CONTEXT: ${{ inputs.project_context }}
           BASE_BRANCH: ${{ inputs.base_branch }}
         run: |
-          # Find the latest published (non-draft) release tag
-          PREV_TAG=$(gh release list --repo "$REPO" --limit 20 --json tagName,publishedAt,isDraft \
-            | jq -r '[.[] | select(.isDraft == false)] | sort_by(.publishedAt) | reverse | .[0].tagName // ""')
+          # Find the latest published release tag, skipping drafts and pre-releases (betas)
+          PREV_TAG=$(gh release list --repo "$REPO" --limit 20 --json tagName,publishedAt,isDraft,isPrerelease \
+            | jq -r '[.[] | select(.isDraft == false and .isPrerelease == false)] | sort_by(.publishedAt) | reverse | .[0].tagName // ""')
 
           # Compare previous tag to base branch HEAD (tag_name need not exist yet)
           if [ -n "$PREV_TAG" ]; then
