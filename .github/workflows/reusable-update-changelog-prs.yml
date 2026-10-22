@@ -25,6 +25,27 @@ jobs:
           fetch-depth: 0
           token: ${{ github.token }}
 
+      # Pre-release staging saves its notes as a "<tag> (preview)" draft. Once
+      # that tag is a published release the draft is obsolete, so delete it,
+      # along with any left over from earlier releases. A preview for a
+      # version that hasn't shipped yet is never touched.
+      - name: Delete obsolete staging preview drafts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh api "repos/$REPO/releases?per_page=100" \
+            --jq '[.[] | select(.draft | not) | .tag_name] as $published
+                  | .[] | select(.draft and .name == (.tag_name + " (preview)") and (.tag_name as $t | $published | index($t)))
+                  | "\(.id)\t\(.name)"' \
+            | while IFS=$'\t' read -r ID NAME; do
+                if gh api --method DELETE "repos/$REPO/releases/$ID" > /dev/null; then
+                  echo "Deleted draft: $NAME"
+                else
+                  echo "::warning::Couldn't delete draft: $NAME"
+                fi
+              done
+
       - name: Replace commit SHA links with PR links in changelog
         env:
           GH_TOKEN: ${{ github.token }}
