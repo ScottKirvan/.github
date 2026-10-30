@@ -41,6 +41,11 @@ on:
         required: false
         type: string
         default: main
+    # Declared so callers outside ScottKirvan (e.g. the AI-Extreme-Programming org) can pass it by
+    # name: `secrets: inherit` only reaches reusable workflows owned by the caller's own org.
+    secrets:
+      GEMINI_API_KEY:
+        required: true
     outputs:
       tag_name:
         description: The version tag staged (useful when inferred)
