@@ -98,7 +98,7 @@ jobs:
 
       - name: Generate AI preview notes
         id: ai
-        uses: actions/ai-inference@v2
+        uses: actions/ai-inference@v3
         with:
           model: ${{ inputs.model }}
           max-completion-tokens: 2000

@@ -109,7 +109,7 @@ jobs:
           echo "staging_branch=$STAGING_BRANCH" >> "$GITHUB_OUTPUT"
           echo "Resolved: tag=$TAG  branch=$STAGING_BRANCH"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.base_branch }}
           token: ${{ github.token }}
