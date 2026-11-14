@@ -34,6 +34,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
+          # $published and $t are jq variables, so the filter stays in single quotes.
+          # shellcheck disable=SC2016
           gh api "repos/$REPO/releases?per_page=100" \
             --jq '[.[] | select(.draft | not) | .tag_name] as $published
                   | .[] | select(.draft and .name == (.tag_name + " (preview)") and (.tag_name as $t | $published | index($t)))
